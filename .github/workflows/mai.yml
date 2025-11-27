@@ -1,0 +1,73 @@
+name: RustDesk desde Cero
+
+on:
+  workflow_dispatch:
+    inputs:
+      rustdesk_id:
+        type: string
+        description: 'ID personalizado (opcional)'
+        required: false
+      rustdesk_password:
+        type: string
+        description: 'Contraseña personalizada (opcional)'
+        required: false
+
+jobs:
+  run_rustdesk:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Descargar RustDesk
+        run: |
+          curl -L https://github.com/rustdesk/rustdesk/releases/download/1.2.4/rustdesk-1.2.4-x86_64.exe -o rustdesk.exe
+
+      - name: Ejecutar RustDesk en modo portable
+        id: launch
+        shell: pwsh
+        run: |
+          # Generar credenciales
+          $id = "${{ github.event.inputs.rustdesk_id }}"
+          $pw = "${{ github.event.inputs.rustdesk_password }}"
+          if (-not $id) { $id = "GH$(Get-Date -Format 'HHmmss')" }
+          if (-not $pw) { $pw = "Pass$(Get-Random -Minimum 10000 -Maximum 99999)!" }
+
+          # Crear carpeta de configuración portable
+          $configDir = "$PWD\rustdesk.exe.config"
+          $null = New-Item -ItemType Directory -Path $configDir -Force
+
+          # Escribir archivo de configuración
+          Set-Content -Path "$configDir\RustDesk.toml" -Value "encrypted = false`nid = `"$id`"`npassword = `"$pw`""
+
+          # Ejecutar RustDesk en modo portable
+          Start-Process -FilePath "$PWD\rustdesk.exe" -ArgumentList "--portable" -PassThru
+
+          # Esperar a que inicie
+          Start-Sleep -Seconds 15
+
+          # Exportar credenciales para el siguiente paso
+          "rustdesk_id=$id" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "rustdesk_password=$pw" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Mostrar credenciales
+        run: |
+          echo "================================"
+          echo "✅ RustDesk activo"
+          echo "--------------------------------"
+          echo "🆔 ID:     ${{ steps.launch.outputs.rustdesk_id }}"
+          echo "🔑 Pass:   ${{ steps.launch.outputs.rustdesk_password }}"
+          echo "--------------------------------"
+          echo "🔗 Conéctate desde: https://rustdesk.com"
+          echo "================================"
+
+      - name: Mantener vivo
+        shell: pwsh
+        run: |
+          $end = (Get-Date).AddMinutes(350)
+          while ((Get-Date) -lt $end) {
+            # Si RustDesk se cierra, volver a iniciarlo
+            if (-not (Get-Process -Name rustdesk -ErrorAction SilentlyContinue)) {
+              Start-Process -FilePath "$PWD\rustdesk.exe" -ArgumentList "--portable"
+            }
+            Start-Sleep -Seconds 300
+          }
