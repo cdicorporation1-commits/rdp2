@@ -1,0 +1,81 @@
+name: 🖥️ RustDesk Desktop (Web-Accessible)
+
+on:
+  workflow_dispatch:
+    inputs:
+      rustdesk_id:
+        type: string
+        description: 'RustDesk ID personalizado (opcional)'
+        required: false
+      rustdesk_password:
+        type: string
+        description: 'Contraseña personalizada (opcional)'
+        required: false
+
+jobs:
+  desktop:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: 🔽 Descargar RustDesk
+        run: |
+          curl -L https://github.com/rustdesk/rustdesk/releases/download/1.2.4/rustdesk-1.2.4-x86_64.exe -o rustdesk.exe
+
+      - name: 🚀 Instalar RustDesk
+        shell: pwsh
+        run: |
+          Start-Process -FilePath ".\rustdesk.exe" -ArgumentList "--silent-install" -Wait
+          Start-Sleep -Seconds 10
+
+      - name: 📡 Configurar credenciales y exportar ID/Password
+        id: set_creds
+        shell: pwsh
+        run: |
+          $customId = "${{ github.event.inputs.rustdesk_id }}"
+          $customPassword = "${{ github.event.inputs.rustdesk_password }}"
+
+          if (-not $customId) {
+            $customId = "GH$(Get-Date -Format 'HHmmss')"
+          }
+          if (-not $customPassword) {
+            $customPassword = "Pass$(Get-Random -Minimum 10000 -Maximum 99999)!"
+          }
+
+          $configDir = "$env:APPDATA\RustDesk\config"
+          $null = New-Item -ItemType Directory -Path $configDir -Force
+
+          # ✅ Escribir el archivo TOML sin usar here-strings (@""), para evitar problemas en YAML
+          Set-Content -Path "$configDir\RustDesk.toml" -Value "encrypted = false`nid = `"$customId`"`npassword = `"$customPassword`""
+
+          # Reiniciar RustDesk
+          Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue | Stop-Process
+          Start-Sleep -Seconds 5
+          Start-Process -FilePath "C:\Program Files\RustDesk\rustdesk.exe"
+
+          # Exportar salidas correctamente en PowerShell
+          "rustdesk_id=$customId" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "rustdesk_password=$customPassword" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: 📢 ¡TUS CREDENCIALES!
+        run: |
+          echo "=================================================="
+          echo "✅ ¡ESCRITORIO REMOTO ACTIVO!"
+          echo "--------------------------------------------------"
+          echo "🆔 RustDesk ID:     ${{ steps.set_creds.outputs.rustdesk_id }}"
+          echo "🔑 Contraseña:      ${{ steps.set_creds.outputs.rustdesk_password }}"
+          echo "--------------------------------------------------"
+          echo "👉 Conéctate desde: https://rustdesk.com"
+          echo "⏱️  Vigente ~6 horas (límite de GitHub Actions)"
+          echo "=================================================="
+
+      - name: 🔄 Mantener vivo
+        shell: pwsh
+        run: |
+          $endTime = (Get-Date).AddMinutes(350)
+          while ((Get-Date) -lt $endTime) {
+            if (-not (Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue)) {
+              Start-Process -FilePath "C:\Program Files\RustDesk\rustdesk.exe"
+            }
+            Start-Sleep -Seconds 300
+          }
